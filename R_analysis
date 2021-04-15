@@ -1,0 +1,435 @@
+rm(list = ls())
+
+library(LSD)
+library(RColorBrewer)
+library(TxDb.Dmelanogaster.UCSC.dm6.ensGene)
+library(rtracklayer)
+library(GenomicAlignments)
+library(IRanges)
+library(ShortRead)
+library(rtracklayer)
+library(grid)
+library(ComplexHeatmap)
+library(circlize)
+library(dendextend)
+library(genefilter)
+library(ggplot2)
+library(tidyverse)
+library(zoo)
+library(gridExtra)
+library(matrixStats)
+########################
+
+#####################################################################################################################
+coverageWindowsStranded <- function(centers, window.size = 2000, coverage) {
+
+  #  cl <- makeCluster(getOption("cl.cores", 8))
+  #  clusterExport(cl, list("centers","coverage","window.size") , envir=environment())
+
+  centers <- centers[centers$chr %in% names(coverage),]
+
+  #  result <- parSapply(cl, names(cov), function(x) {
+  result <- sapply(names(coverage), function(x) {
+    my.cov <- coverage[[x]]
+    my.peaks <- centers[centers$chr==x,]
+    mw.views <- Views(my.cov, start=my.peaks$center-ceiling(window.size/2), width=window.size+1)
+    ## remove out-of bounds views
+    flt <- start(mw.views)>0 & end(mw.views) < length(my.cov)
+    mw.views <- mw.views[flt,]
+    my.peaks <- my.peaks[flt,]
+    if (length(mw.views) > 0) {
+      mat <- as.matrix(mw.views)
+      colnames(mat) <- seq(from=(0-ceiling(window.size/2)), to=0+ceiling(window.size/2))
+      rownames(mat) <- rownames(my.peaks)
+      return(mat)
+    } else {
+      return(NULL)
+    }
+  })
+  #  stopCluster(cl)
+  mat <- Reduce(rbind, result)
+  centers <- centers[rownames(centers) %in% rownames(mat),]
+  na.omit(match(rownames(centers), rownames(mat)) )-> o
+  centers <- centers[o,]
+  mat[centers$strand=="-",] <- t(apply(mat[centers$strand=="-",],1,rev))
+  mat
+}
+#####################################################################################################################
+
+############ bam files ############
+
+my_files <- list.files(path="1peaks",pattern = "merge.*.bed$",full.names = T)
+my_files <- my_files[grepl("f0",my_files)==F]
+
+
+my_chromosomes <- c("chr2L","chr2R","chr3L","chr3R","chrX","chrY","chr4")
+my_upper_limit <- 220
+my_limit <- 135
+i=1
+
+
+parallel::mclapply(seq_along(my_files), mc.cores = 8, FUN = function(i){
+
+  my_name <- gsub("merged","msl2_chip",gsub("1peaks/","",gsub(".bed","",(paste("normalized",my_files[i], sep=".")))))
+
+  paired_ranges <- import.bed(my_files[i])
+  paired_ranges <- keepSeqlevels(paired_ranges, my_chromosomes, pruning.mode = "coarse")
+  my_lengths <- seqlengths(keepSeqlevels(TxDb.Dmelanogaster.UCSC.dm6.ensGene, my_chromosomes, pruning.mode = "coarse"))
+  seqlengths(paired_ranges) <- my_lengths
+
+  paired_ranges_all <- paired_ranges[width(paired_ranges) < my_upper_limit]
+  paired_ranges_q1 <- paired_ranges[width(paired_ranges) >= 0   &  width(paired_ranges) < my_limit]
+  paired_ranges_q2 <- paired_ranges[width(paired_ranges) >= my_limit &  width(paired_ranges) < my_upper_limit]
+
+  saveRDS(paired_ranges_all, file =  paste(my_name,"all.unsized.rds", sep="."))
+
+  paired_ranges_all <- resize(paired_ranges_all, 50, fix="center")
+  paired_ranges_q1 <- resize(paired_ranges_q1, 50, fix="center")
+  paired_ranges_q2 <- resize(paired_ranges_q2, 50, fix="center")
+
+  my_cov_all <- coverage(paired_ranges_all)
+  my_cov_q1 <- coverage(paired_ranges_q1)
+  my_cov_q2 <- coverage(paired_ranges_q2)
+
+  total_all <- sum(as.numeric(unlist(my_cov_all)))
+  total_q1 <- sum(as.numeric(unlist(my_cov_q1)))
+  total_q2 <- sum(as.numeric(unlist(my_cov_q2)))
+
+  norm_cov_all <- my_cov_all/total_all*10^9
+  norm_cov_q1  <- my_cov_q1/total_q1*10^9
+  norm_cov_q2  <- my_cov_q2/total_q2*10^9
+
+  assign(paste(my_name, "all", sep="."), norm_cov_all)
+  assign(paste(my_name, "q1", sep="."), norm_cov_q1)
+  assign(paste(my_name, "q2", sep="."), norm_cov_q2)
+
+  export.bw(get(paste(my_name,"all", sep=".")), paste(my_name,"all.bw", sep="."))
+  export.bw(get(paste(my_name,"q1", sep=".")), paste(my_name,"q1.bw", sep="."))
+  export.bw(get(paste(my_name,"q2", sep=".")), paste(my_name,"q2.bw", sep="."))
+
+  save(list= paste(my_name, "all", sep="."),file=paste(my_name,"all.rda", sep="."))
+  save(list= paste(my_name, "q1", sep="."),file=paste(my_name,"q1.rda", sep="."))
+  save(list= paste(my_name, "q2", sep="."),file=paste(my_name,"q2.rda", sep="."))
+
+  #saveRDS(paired_ranges_all, file =  paste(my_name,"all.rds", sep="."))
+  #saveRDS(paired_ranges_q1, file =  paste(my_name,"q1.rds", sep="."))
+  #saveRDS(paired_ranges_q2, file = paste(my_name,"q2.rds", sep="."))
+
+
+ # my_name <- my_files[i]
+
+
+ # pdf(paste("frag_dens",my_name,"pdf", sep="."), width = 8, height = 8)
+
+ # par(oma=c(5,5,5,5), mar=c(5,5,5,5), cex.lab=1.5, cex.axis=1.25, cex.main = 1.75)
+
+ # plot(density(width(paired_ranges), from=0, to=500), lwd=2,
+ #      main=my_name, xlab = "Frag Length")
+
+ # legend("topleft", legend = length(paired_ranges), bg = "white")
+
+
+ # dev.off()
+
+})
+
+
+
+########### summarize replicates
+# 
+# 
+# #####################################################################################################################
+# 
+# 
+# my_colors <- brewer.pal(9,"Set1")
+# 
+# my_files <- list.files(pattern = ".rds")
+# 
+# pdf( paste("frag_dens.comparison2","pdf", sep="."), width = 12, height = 8)
+# 
+# par(oma=c(5,5,5,5), mar=c(5,5,5,5), cex.lab=1.5, cex.axis=1.25, cex.main = 1.75)
+# 
+# for(i in seq_along(my_files)){
+#   paired_ranges <- readRDS(my_files[i])
+# 
+#   if(i == 1){
+#       plot(density(width(paired_ranges), from=50, to=250), lwd=2,
+#        main="Comparison", xlab = "Frag Length", col= my_colors[i])
+#     #abline(v = my_limit, col="grey", lwd=3, lty=2)
+#     #abline(v = my_lower_limit, col="grey", lwd=3, lty=2)
+# 
+#   } else {
+#     lines(density(width(paired_ranges), from=50, to=250), lwd=2, col= my_colors[i])
+#   }
+# }
+# 
+# 
+# legend("topright", legend = gsub(".rds","",gsub("normalized.|\\.[1].*", "", my_files)), col = my_colors[seq_along(my_files)], pch=19)
+# 
+# dev.off()
+
+####################################################################################################
+####################################################################################################
+
+###############load sites######################
+
+###for area of interest
+
+my_centers_path <- list.files(path="../centers2", pattern = ".bed$",full.names = T) ### my_centers is 0
+sapply(list.files(pattern = "^centers"), unlink)
+#######
+i=1
+for(i in seq_along(my_centers_path)){
+  my_name <- paste("centers",gsub("../centers2/","",gsub(".bed","",my_centers_path[i])), sep=".")
+  read.delim(my_centers_path[i],header = F,comment.char = "#") -> sites
+  if(ncol(sites) == 6){
+    sites <- sites[c(1,2,3,6)]
+  }
+  if(ncol(sites) == 3){
+    sites[,4] <- c("+")
+  }
+  colnames(sites) <- c("chr","start","stop","strand")
+  sites$centers <- round((sites$start+sites$stop)/2,digits = 0)
+  rownames(sites) <- paste(sites$chr,sites$centers)
+  assign(my_name, sites)
+  save(list = my_name, file = paste(my_name, "rda", sep="."))
+  print(paste(my_name,"created"))
+}
+
+my_centers <- list.files(pattern = "centers") ### my_centers is 0
+
+#### calculated coverage means ######
+my_window = 2000
+
+my_means <- list.files(pattern = "^means")  ### my_means is still empty
+my_files <- list.files(pattern ="normalized.*.rda")
+my_conditions <- c("q1","q2","all")
+
+n=1
+f=1
+i=1
+parallel::mclapply(seq_along(my_conditions), mc.cores = 8, FUN = function(n){
+    my_reps <- my_files[grepl(my_conditions[n],my_files)==T]
+
+parallel::mclapply(seq_along(my_reps), mc.cores = 8, FUN = function(i){
+  for(f in seq_along(my_centers)){
+    my_name <- paste("area", my_reps[i], my_centers[f],sep=".")
+    my_name <- gsub("normalized.","", my_name)
+    my_name <- gsub(".rda","", my_name)
+    my_name <- gsub("centers.","", my_name)
+    
+      norm.cover <- get(load(my_reps[i]))
+      center<- get(load(my_centers[f]))
+
+      m_area <- coverageWindowsStranded(center,my_window,norm.cover)
+      save(m_area, file = my_name)
+
+      means_area <- colMeans(m_area, na.rm = FALSE, dims = 1)
+      save(means_area, file = gsub("area","means",my_name))
+
+    }
+  })
+})
+
+##############plot data######################################
+library(zoo)
+library(RColorBrewer)
+library(dplyr)
+library(ggplot2)
+library(gridExtra)
+rm(list=ls())
+my_window = 2000
+my_colors <- brewer.pal(9,"Set1") #alternative colour palette paired
+smoothing <- 25
+barplot(1:12,col = my_colors)
+######
+quartile <- c("q1","q2","all")
+my_samples <- c("^means")
+my_centers <- list.files(pattern = "^centers.*.rda$")
+t=1
+f=1
+i=1
+h=1
+g=1
+for(t in seq_along(quartile)){
+for(g in seq_along(my_samples)){
+  my_means <- list.files(pattern= my_samples[g])
+  my_means2 <- my_means[grepl((quartile[t]), my_means) == TRUE]
+  rm(list=ls(pattern = "m1_"))
+for(h in seq_along(my_centers)){
+    my_name <- paste0("m1_",quartile[t],".",gsub(".rda","",gsub("centers.","",my_centers[h])),"$")
+    my_means1 <- my_means2[grepl(gsub("m1_","",my_name), my_means2) == T]
+    assign(my_name,my_means1)
+}
+  
+  mymaps <- mget(ls(pattern = "m1_"))
+  my_titles <- gsub("means.","",gsub(gsub("m1_",".",my_name),"",my_means1))
+  my_mains <- c(gsub("m1_.","",gsub(quartile[t],"",paste(ls(pattern = "m1_")))))
+  my_mains <- gsub("$","",my_mains,fixed=T)
+  
+  for(f in seq_along(mymaps)){
+    my_areas <- mymaps[[f]]
+    my_counter <- nrow(get(load(paste0("area.",gsub("means.","",my_areas[1])))))
+
+    plotDF <- NULL
+    for(i in seq_along(my_areas)){
+        x <- get(load(my_areas[i]))
+        x <- as.data.frame(x)
+        x$position <- c(-1000:1000)
+        x$sample <- my_titles[i]
+        x$x <- rollmean(x$x,smoothing,fill = NA)
+        plotDF <- bind_rows(plotDF,x)
+    }
+    
+    myname <- paste0("ggplot",f)
+    myplot <- ggplot(plotDF,aes(x=position, y = x, col = sample), ylab("occupancy"))+
+      labs(y = "rel. occupancy",x="position [bp]",title = paste0(my_mains[f]," [",my_counter,"]"))+
+      geom_area(aes(x=position, y = x),subset(plotDF,sample %in% c("input")),
+               fill = "grey90", color= "grey90")+
+      geom_line(aes(x=position, y = x),subset(plotDF,!sample %in% c("input")),stat="identity",size=0.5)+
+      theme_classic()+
+      coord_cartesian(
+                      #ylim = c(-1,4),
+                      ylim=c(min(plotDF$x,na.rm = T)*0.9,max(plotDF$x,na.rm = T)*1.1),
+                      xlim=c(min(plotDF$position),max(plotDF$position)),
+                      expand = F)+
+    scale_color_manual(values=my_colors)
+    assign(myname,myplot)
+  }
+  
+  plots <- ls(pattern = "ggplot")
+  l = mget(plots)
+
+  ggsave(paste0("a.compplot.",quartile[t],"_",my_samples[g],".pdf"), marrangeGrob(grobs = l, nrow=2, ncol=3), width=14,height=8)
+}
+}
+################################
+
+
+rm(list=ls())
+my_window = 2000
+my_colors <- brewer.pal(9,"Set1") #alternative colour palette paired
+smoothing <- 25
+barplot(1:12,col=my_colors)
+
+################################
+
+myHeatmap <- function(mat, column_title, name, col, clustering_method_rows = "complete"){
+  Heatmap(mat,
+          col = col,
+          column_title = column_title,
+          name = name,
+          show_column_names = FALSE,
+          show_row_names = FALSE,
+          cluster_columns = FALSE,
+          cluster_rows = FALSE,
+          clustering_method_rows = clustering_method_rows,
+          gap = unit(1.5, "mm"),
+          column_title_gp = gpar(fontsize = 6),
+          column_title_rot = 90,
+          row_title = paste("n =",length(BoverA)),
+          row_title_rot = 90,
+          row_title_gp = gpar(fontsize = 6),
+          heatmap_legend_param = heatmap_legend_param,
+          show_heatmap_legend = TRUE
+  )
+}
+
+bin.matrix <- function(m, bin.size) {
+  bm <- c()
+  for (i in 1:round((ncol(m)/bin.size))) {
+    er <- (i*bin.size)
+    sr <- er-(bin.size-1)
+    bm <- cbind(bm,rowMeans(m[,sr:er]))
+  }
+  bm
+}
+color_function <- function(mat){
+  x = as.vector(as.matrix(mat))
+  colfun <- colorRamp2(breaks = seq(quantile(x, 0.2), quantile(x, 0.98), length = 3),
+                       colors = heat.colors(3))
+  return(colfun)
+}
+color_functionH <- function(mat){
+  x = as.vector(as.matrix(mat))
+  colfun <- colorRamp2(breaks = seq(quantile(x, 0.2), quantile(x, 0.95), length = 3),
+                       colors = c("blue","white","red"))
+  
+  return(colfun)
+}
+heatmap_legend_param = list(legend_direction = "vertical",
+                            legend_height = unit(3,"cm"),
+                            title = "scale",
+                            title_gp = gpar(fontsize = 6))
+
+################################heatmap
+##
+quartile <- c("q1")
+my_samples <- c("^area")
+my_centers <- list.files(pattern = "^centers.*.rda$")
+
+for(t in seq_along(quartile)){
+  for(g in seq_along(my_samples)){
+    my_means <- list.files(pattern= my_samples[g])
+    my_means2 <- my_means[grepl((quartile[t]), my_means) == TRUE]
+    #my_means2 <- my_means2[grepl((my_samples[g]), my_means2) == TRUE]
+    for(h in seq_along(my_centers)){
+      my_name <- paste0("m1_",gsub(".rda","",gsub("centers.","",my_centers[h])))
+      my_means1 <- my_means2[grepl(gsub("m1_","",my_name), my_means2) == T]
+      assign(my_name,my_means1)
+    }
+    mymaps <- mget(ls(pattern = "m1_"))
+    my_titles <- gsub("area.","",gsub(gsub("m1_",".",my_name),"",my_means1))
+    
+    my_mains <- c(gsub("m1_","",paste(ls(pattern = "m1_"))))
+    
+    
+    for(f in seq_along(mymaps)){
+  
+  my_area <- mymaps[[f]]
+  my_sorter <- my_area[2]
+  rowMeans(get(load(my_sorter))[,950:1050])-> NFR # 100 bp binding
+  m <- NFR[is.finite(NFR)]
+  m.sort <- sort(m, decreasing = T, na.last = T)
+  BoverA <- names(m.sort)
+  i=1
+  ##   change here
+  for(i in seq_along(my_area)){
+    my_name <- paste("ht",i,sep="")
+    mat.rng <- get(load(my_area[i]))
+    match(BoverA, rownames(mat.rng), nomatch = NA) -> sorted.number # gene sorting
+    mat.rng <- na.omit(mat.rng[sorted.number,])
+    mat.rng <- bin.matrix(mat.rng,10)
+    
+    my_ht <- myHeatmap(mat.rng, col =  color_function(get(load(my_area[1]))), column_title = my_titles[i])
+    assign(my_name, my_ht)
+    rm(my_ht)
+    
+  }
+  
+  
+  #heatmap_legend = color_mapping_legend(ht1@matrix_color_mapping, plot = FALSE, title = "scale")
+  
+  my_list <- c(paste0("ht",seq(1,length(my_area))))
+  my_list1 <- NULL
+  q=1
+  
+  for(q in seq_along(my_list)){
+    x <- get(my_list[q])
+    my_list1 <- my_list1+x
+  }
+  
+  # pdf(paste0("heatmap.",my_search[f],".pdf"),width =8 ,height=8)
+  # draw(my_list1,
+  #      padding = unit(c(1, 1, 1, 1), "cm"))
+  # 
+  # dev.off()
+  
+  png(paste0("heatmap.",my_mains[f],quartile[t],".png"),units = "px",width =5000 ,height=5000,res=600)
+  draw(my_list1,
+       padding = unit(c(1, 1, 1, 1), "cm"))
+  
+  dev.off()
+}
+  }
+}
