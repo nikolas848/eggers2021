@@ -8,11 +8,10 @@ library(GenomicRanges)
 library(rtracklayer)
 
 #####################################################################################################################
-#####################################################################################################################
 
 my_chromosomes <- c("chr2L","chr2R","chr3L","chr3R","chr4","chrX")
 my_colors <- brewer.pal(7,"Set1")
-#####################################################################################################################
+
 #####################################################################################################################
 
 ### load new peaks ###
@@ -94,44 +93,19 @@ my_overlaps_venn <-  Venn(my_overlaps_list)
 my_overlaps_venn_plot <- compute.Venn(my_overlaps_venn,doWeights=T)
 
 SetLabels <- VennGetSetLabels(my_overlaps_venn_plot)
-####red
-#SetLabels[SetLabels$Label==names(my_overlaps_list)[1],"y"] <- 75
-####blue
-#SetLabels[SetLabels$Label==names(my_overlaps_list)[2],"x"] <- 20
-####green
-#SetLabels[SetLabels$Label==names(my_overlaps_list)[3],"x"] <- -30
+
 
 my_overlaps_venn_plot <- VennSetSetLabels(my_overlaps_venn_plot,SetLabels)
 SetFaceLabels <- VennGetFaceLabels(my_overlaps_venn_plot)
 
-#SetFaceLabels$x[1] <- SetFaceLabels$x[1] -15
-#SetFaceLabels$y[1] <- SetFaceLabels$y[1] +1 
-# 
-#SetFaceLabels$x[3] <- SetFaceLabels$x[3] -5
-# 
-#SetFaceLabels$x[4] <- SetFaceLabels$x[4] +10
-#SetFaceLabels$y[4] <- SetFaceLabels$y[4] +10
-# 
-#SetFaceLabels$x[6] <- SetFaceLabels$x[6] +2
-#SetFaceLabels$y[6] <- SetFaceLabels$y[6] +2
-#
-#SetFaceLabels$x[7] <- SetFaceLabels$x[7] +5
+
 
 my_overlaps_venn_plot <- Vennerable:::VennSetFaceLabels(my_overlaps_venn_plot,SetFaceLabels)
 gp <- VennThemes(my_overlaps_venn_plot)
 
 
-#gp$Set$Set1$col <- my_colors[6]
-#gp$Set$Set2$col <- my_colors[2]
-#gp$Set$Set3$col <- my_colors[7]
-
-#gp$SetText$Set1$col <- my_colors[6]
-#gp$SetText$Set2$col <- my_colors[2]
-#gp$SetText$Set3$col <- my_colors[7]
-
 plot(my_overlaps_venn_plot, show = list(Faces = FALSE), gp = gp
 )
-#grid.text("Comparison", x = 0.5, y = 0.95, gp = gpar(cex=1.75))
 
 dev.off()
 
