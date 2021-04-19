@@ -79,60 +79,29 @@ parallel::mclapply(seq_along(my_files), mc.cores = 8, FUN = function(i){
 
 rm(list=ls())
 ########################################
-my_set <- list.files(pattern="^corr*")
-my_set <- my_set[grepl("sum",my_set)==FALSE]
+my_set2 <- list.files(pattern="area*")
+samples <- c("alone","neg","cm")
+i=2
+for(i in seq_along(samples)){
+  
+my_set <- my_set2[grepl(samples[i],my_set2)==T]
+
 for(t in seq_along(my_set)){
   load(my_set[t])
 }
-  my_titles <- gsub("area.","",my_set)
-  my_df <-data.frame(mget(my_set))
-  colnames(my_df) <- my_titles
-  my_df
-  #my_df <- as_tibble(my_df)
-  #my_df <- log10(my_df)
-  
+my_titles <- gsub("area.","",my_set)
+my_df <-data.frame(mget(my_set))
+colnames(my_df) <- my_titles
+my_df
+myrho1 <- cor.test(my_df[,1],my_df[,2], method="spearman")
+myrho2 <- cor.test(my_df[,2],my_df[,3], method="spearman")
+myrho3 <- cor.test(my_df[,1],my_df[,3], method="spearman")
+title <- gsub("rho = ","",paste0("103_85",myrho1[4],"85_96",myrho2[4],"103_96",myrho3[4]))
 
-  myplot <- ggpairs(log2(my_df),axisLabels = "internal",)
-  myplot
-  
-  ggsave(paste0("a.correlation.png"),myplot, width=5,height=5)
+myplot <- ggpairs(my_df,axisLabels = "show")
+myplot <- myplot+labs(title=title)
+ggsave(paste0(samples[i],".correlation.pdf"),plot = myplot)
 
-
-library(corrplot)
-library(RColorBrewer)
-
-correlation_matrix <- cor(my_df)
-x <- corrplot(correlation_matrix, method = "square", type = "upper", tl.col = "black", order = "hclust", col = brewer.pal(n = 5, name = "RdYlBu"))
-x
-
-
-
-
-
-
-library(bedr)
-
-
-samplenames <- c("_alone.bed","_neg.bed","_cm.bed")
-i=1
-for(i in seq_along(samplenames)){
-  
-files <- list.files(pattern=samplenames[i])
-file_list=file.info(files)
-file_list=file_list[order(file_list$size),]
-file_list=head(file_list,1)
-x <- rownames(file_list)
-samplesize <- length(import.bed(x))
-f=1
-for(f in seq_along(files)){
-  name <- files[f]
-beds <- import.bed(files[f])
-export.bed(sample(beds,size = samplesize),gsub(".bed",".sample2.bed",name))
-}
 }
 
-
-
-head(
-  x <- import.bed("85_msl2_chip_cm.sample2.bed")
-length(x)
+dev.off()
