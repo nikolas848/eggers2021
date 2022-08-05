@@ -1,12 +1,12 @@
 #!/bin/sh
 
 # bowtie.sbatch
-#
+
 #SBATCH -J JE_demulti  # A single job name for the array
 #SBATCH -p slim18                    # Partition
-#SBATCH -n 8                      # 12 cores
-#SBATCH -N 1                         # one node ?required
-#SBATCH -t 0-6:00                    # Running time of 2 hours
+#SBATCH -n 8                      # x cores
+#SBATCH -N 1                         # one node
+#SBATCH -t 0-6:00                    # Running time of x hours
 #SBATCH --mem 20000                  # Memory request
 #SBATCH -o JE_%A_%a.out          # Standard output
 #SBATCH -e JE_%A_%a.err          # Standard error
