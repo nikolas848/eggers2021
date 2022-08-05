@@ -18,17 +18,13 @@ library(tidyverse)
 library(zoo)
 library(gridExtra)
 library(matrixStats)
-########################
 
 #####################################################################################################################
-coverageWindowsStranded <- function(centers, window.size = 2000, coverage) {
 
-  #  cl <- makeCluster(getOption("cl.cores", 8))
-  #  clusterExport(cl, list("centers","coverage","window.size") , envir=environment())
+coverageWindowsStranded <- function(centers, window.size = 2000, coverage) {
 
   centers <- centers[centers$chr %in% names(coverage),]
 
-  #  result <- parSapply(cl, names(cov), function(x) {
   result <- sapply(names(coverage), function(x) {
     my.cov <- coverage[[x]]
     my.peaks <- centers[centers$chr==x,]
@@ -46,7 +42,6 @@ coverageWindowsStranded <- function(centers, window.size = 2000, coverage) {
       return(NULL)
     }
   })
-  #  stopCluster(cl)
   mat <- Reduce(rbind, result)
   centers <- centers[rownames(centers) %in% rownames(mat),]
   na.omit(match(rownames(centers), rownames(mat)) )-> o
@@ -54,19 +49,16 @@ coverageWindowsStranded <- function(centers, window.size = 2000, coverage) {
   mat[centers$strand=="-",] <- t(apply(mat[centers$strand=="-",],1,rev))
   mat
 }
-#####################################################################################################################
 
-############ bam files ############
+#####################################################################################################################
 
 my_files <- list.files(path="1peaks",pattern = "merge.*.bed$",full.names = T)
 my_files <- my_files[grepl("f0",my_files)==F]
-
 
 my_chromosomes <- c("chr2L","chr2R","chr3L","chr3R","chrX","chrY","chr4")
 my_upper_limit <- 220
 my_limit <- 135
 i=1
-
 
 parallel::mclapply(seq_along(my_files), mc.cores = 8, FUN = function(i){
 
@@ -116,68 +108,22 @@ parallel::mclapply(seq_along(my_files), mc.cores = 8, FUN = function(i){
   #saveRDS(paired_ranges_q2, file = paste(my_name,"q2.rds", sep="."))
 
 
+########### frag density plot optional
  # my_name <- my_files[i]
-
-
  # pdf(paste("frag_dens",my_name,"pdf", sep="."), width = 8, height = 8)
-
  # par(oma=c(5,5,5,5), mar=c(5,5,5,5), cex.lab=1.5, cex.axis=1.25, cex.main = 1.75)
-
  # plot(density(width(paired_ranges), from=0, to=500), lwd=2,
  #      main=my_name, xlab = "Frag Length")
-
  # legend("topleft", legend = length(paired_ranges), bg = "white")
-
-
  # dev.off()
-
+ 
 })
 
 
-
-########### summarize replicates
-# 
-# 
-# #####################################################################################################################
-# 
-# 
-# my_colors <- brewer.pal(9,"Set1")
-# 
-# my_files <- list.files(pattern = ".rds")
-# 
-# pdf( paste("frag_dens.comparison2","pdf", sep="."), width = 12, height = 8)
-# 
-# par(oma=c(5,5,5,5), mar=c(5,5,5,5), cex.lab=1.5, cex.axis=1.25, cex.main = 1.75)
-# 
-# for(i in seq_along(my_files)){
-#   paired_ranges <- readRDS(my_files[i])
-# 
-#   if(i == 1){
-#       plot(density(width(paired_ranges), from=50, to=250), lwd=2,
-#        main="Comparison", xlab = "Frag Length", col= my_colors[i])
-#     #abline(v = my_limit, col="grey", lwd=3, lty=2)
-#     #abline(v = my_lower_limit, col="grey", lwd=3, lty=2)
-# 
-#   } else {
-#     lines(density(width(paired_ranges), from=50, to=250), lwd=2, col= my_colors[i])
-#   }
-# }
-# 
-# 
-# legend("topright", legend = gsub(".rds","",gsub("normalized.|\\.[1].*", "", my_files)), col = my_colors[seq_along(my_files)], pch=19)
-# 
-# dev.off()
-
-####################################################################################################
-####################################################################################################
-
 ###############load sites######################
 
-###for area of interest
+my_centers_path <- list.files(path="../centers2", pattern = ".bed$",full.names = T)
 
-my_centers_path <- list.files(path="../centers2", pattern = ".bed$",full.names = T) ### my_centers is 0
-sapply(list.files(pattern = "^centers"), unlink)
-#######
 i=1
 for(i in seq_along(my_centers_path)){
   my_name <- paste("centers",gsub("../centers2/","",gsub(".bed","",my_centers_path[i])), sep=".")
@@ -199,15 +145,13 @@ for(i in seq_along(my_centers_path)){
 my_centers <- list.files(pattern = "centers") ### my_centers is 0
 
 #### calculated coverage means ######
-my_window = 2000
 
+my_window = 2000
 my_means <- list.files(pattern = "^means")  ### my_means is still empty
 my_files <- list.files(pattern ="normalized.*.rda")
 my_conditions <- c("q1","q2","all")
 
-n=1
-f=1
-i=1
+
 parallel::mclapply(seq_along(my_conditions), mc.cores = 8, FUN = function(n){
     my_reps <- my_files[grepl(my_conditions[n],my_files)==T]
 
@@ -232,25 +176,17 @@ parallel::mclapply(seq_along(my_reps), mc.cores = 8, FUN = function(i){
 })
 
 ##############plot data######################################
-library(zoo)
-library(RColorBrewer)
-library(dplyr)
-library(ggplot2)
-library(gridExtra)
+
 rm(list=ls())
 my_window = 2000
 my_colors <- brewer.pal(9,"Set1") #alternative colour palette paired
 smoothing <- 25
 barplot(1:12,col = my_colors)
-######
+
 quartile <- c("q1","q2","all")
 my_samples <- c("^means")
 my_centers <- list.files(pattern = "^centers.*.rda$")
-t=1
-f=1
-i=1
-h=1
-g=1
+
 for(t in seq_along(quartile)){
 for(g in seq_along(my_samples)){
   my_means <- list.files(pattern= my_samples[g])
@@ -363,7 +299,7 @@ heatmap_legend_param = list(legend_direction = "vertical",
                             title_gp = gpar(fontsize = 6))
 
 ################################heatmap
-##
+
 quartile <- c("q1")
 my_samples <- c("^area")
 my_centers <- list.files(pattern = "^centers.*.rda$")
